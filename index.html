@@ -1,0 +1,384 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>🗺️ Territory Domination Map</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #0a0a0a;
+      color: #e0e0e0;
+    }
+    .header {
+      background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+      padding: 1rem 2rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 1px solid #333;
+    }
+    h1 { font-size: 1.5rem; display: flex; align-items: center; gap: 0.5rem; }
+    .stats { display: flex; gap: 1.5rem; }
+    .stat { text-align: center; }
+    .stat-value { font-size: 1.5rem; font-weight: bold; }
+    .stat-label { font-size: 0.75rem; color: #888; }
+    .stat.lead .stat-value { color: #667eea; }
+    .stat.qualified .stat-value { color: #f59e0b; }
+    .stat.demo .stat-value { color: #10b981; }
+    .stat.won .stat-value { color: #22c55e; }
+    
+    .container { display: flex; height: calc(100vh - 60px); }
+    
+    #map { flex: 1; }
+    
+    .sidebar {
+      width: 380px;
+      background: #111;
+      border-left: 1px solid #333;
+      overflow-y: auto;
+      padding: 1rem;
+    }
+    
+    .filters { margin-bottom: 1rem; }
+    .filters h3 { font-size: 0.9rem; color: #888; margin-bottom: 0.5rem; }
+    .filter-btns { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+    .filter-btn {
+      padding: 0.4rem 0.8rem;
+      background: #1a1a1a;
+      border: 1px solid #333;
+      border-radius: 20px;
+      color: #888;
+      font-size: 0.8rem;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .filter-btn:hover { border-color: #667eea; color: #fff; }
+    .filter-btn.active { background: #667eea; border-color: #667eea; color: #fff; }
+    
+    .plant-list { }
+    .plant-card {
+      background: #1a1a1a;
+      border: 1px solid #333;
+      border-radius: 8px;
+      padding: 1rem;
+      margin-bottom: 0.75rem;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .plant-card:hover { border-color: #667eea; transform: translateX(4px); }
+    .plant-card.selected { border-color: #667eea; background: #1a1a2e; }
+    .plant-name { font-weight: 600; font-size: 1rem; margin-bottom: 0.25rem; }
+    .plant-location { color: #888; font-size: 0.85rem; }
+    .plant-stage {
+      display: inline-block;
+      padding: 0.2rem 0.5rem;
+      border-radius: 4px;
+      font-size: 0.75rem;
+      margin-top: 0.5rem;
+    }
+    .stage-lead { background: #1e3a5f; color: #60a5fa; }
+    .stage-qualified { background: #3d2f0d; color: #fbbf24; }
+    .stage-demo { background: #0d3320; color: #4ade80; }
+    .stage-won { background: #14532d; color: #22c55e; }
+    .stage-lost { background: #3d0d0d; color: #f87171; }
+    .stage-none { background: #333; color: #888; }
+    
+    .detail-panel {
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      right: 380px;
+      background: #111;
+      border-top: 1px solid #333;
+      padding: 1.5rem 2rem;
+      transform: translateY(100%);
+      transition: transform 0.3s;
+      z-index: 1000;
+    }
+    .detail-panel.open { transform: translateY(0); }
+    .detail-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 1rem; }
+    .detail-title { font-size: 1.25rem; font-weight: 600; }
+    .detail-close {
+      background: none;
+      border: none;
+      color: #888;
+      font-size: 1.5rem;
+      cursor: pointer;
+    }
+    .detail-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1.5rem; }
+    .detail-section h4 { color: #888; font-size: 0.8rem; margin-bottom: 0.5rem; }
+    .detail-section p { font-size: 0.95rem; }
+    .copy-btn {
+      background: #667eea;
+      border: none;
+      color: white;
+      padding: 0.4rem 0.8rem;
+      border-radius: 4px;
+      font-size: 0.8rem;
+      cursor: pointer;
+      margin-top: 0.5rem;
+    }
+    .copy-btn:hover { background: #5a6fd6; }
+    .copy-btn.copied { background: #22c55e; }
+    
+    /* Leaflet custom markers */
+    .custom-marker {
+      width: 24px;
+      height: 24px;
+      border-radius: 50%;
+      border: 3px solid white;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+    }
+    .marker-lead { background: #3b82f6; }
+    .marker-qualified { background: #f59e0b; }
+    .marker-demo { background: #10b981; }
+    .marker-won { background: #22c55e; }
+    .marker-lost { background: #ef4444; }
+    .marker-none { background: #6b7280; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>🗺️ Territory Domination Map</h1>
+    <div class="stats">
+      <div class="stat lead">
+        <div class="stat-value" id="stat-lead">0</div>
+        <div class="stat-label">Leads</div>
+      </div>
+      <div class="stat qualified">
+        <div class="stat-value" id="stat-qualified">0</div>
+        <div class="stat-label">Qualified</div>
+      </div>
+      <div class="stat demo">
+        <div class="stat-value" id="stat-demo">0</div>
+        <div class="stat-label">Demo</div>
+      </div>
+      <div class="stat won">
+        <div class="stat-value" id="stat-won">0</div>
+        <div class="stat-label">Won</div>
+      </div>
+    </div>
+  </div>
+  
+  <div class="container">
+    <div id="map"></div>
+    
+    <div class="sidebar">
+      <div class="filters">
+        <h3>Filter by Stage</h3>
+        <div class="filter-btns">
+          <button class="filter-btn active" data-filter="all">All</button>
+          <button class="filter-btn" data-filter="lead">Lead</button>
+          <button class="filter-btn" data-filter="qualified">Qualified</button>
+          <button class="filter-btn" data-filter="demo">Demo</button>
+          <button class="filter-btn" data-filter="won">Won</button>
+          <button class="filter-btn" data-filter="none">Not Started</button>
+        </div>
+      </div>
+      
+      <div class="plant-list" id="plant-list">
+        <p style="color: #666; text-align: center; padding: 2rem;">Loading plants...</p>
+      </div>
+    </div>
+  </div>
+  
+  <div class="detail-panel" id="detail-panel">
+    <div class="detail-header">
+      <div class="detail-title" id="detail-title">Plant Name</div>
+      <button class="detail-close" onclick="closeDetail()">×</button>
+    </div>
+    <div class="detail-grid">
+      <div class="detail-section">
+        <h4>📍 Location</h4>
+        <p id="detail-address">-</p>
+      </div>
+      <div class="detail-section">
+        <h4>📋 Permit</h4>
+        <p id="detail-permit">-</p>
+        <p id="detail-permit-status" style="color: #888; font-size: 0.85rem;"></p>
+      </div>
+      <div class="detail-section">
+        <h4>👤 Contact</h4>
+        <p id="detail-contact">-</p>
+        <p id="detail-email" style="color: #667eea;"></p>
+        <button class="copy-btn" id="copy-email-btn" onclick="copyEmail()" style="display:none;">📋 Copy Email</button>
+      </div>
+      <div class="detail-section">
+        <h4>📞 Phone</h4>
+        <p id="detail-phone">-</p>
+        <button class="copy-btn" id="copy-phone-btn" onclick="copyPhone()" style="display:none;">📋 Copy Phone</button>
+      </div>
+    </div>
+  </div>
+  
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script>
+    let plants = [];
+    let markers = {};
+    let map;
+    let selectedPlant = null;
+    
+    // Initialize map centered on Alabama
+    map = L.map('map').setView([32.8, -86.8], 7);
+    
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+      attribution: '© OpenStreetMap, © CARTO'
+    }).addTo(map);
+    
+    // Load plant data
+    fetch('plants.json')
+      .then(r => r.json())
+      .then(data => {
+        plants = data;
+        renderPlants();
+        updateStats();
+        addMarkers();
+      })
+      .catch(err => {
+        document.getElementById('plant-list').innerHTML = 
+          '<p style="color: #f87171; text-align: center; padding: 2rem;">Error loading data. Run fetch_plants.py first.</p>';
+      });
+    
+    function getStageClass(stage) {
+      const s = stage.toLowerCase();
+      if (s.includes('lead') || s.includes('to contact')) return 'lead';
+      if (s.includes('qualified') || s.includes('reached') || s.includes('interest')) return 'qualified';
+      if (s.includes('demo')) return 'demo';
+      if (s.includes('won') || s.includes('onboard') || s.includes('paid') || s.includes('p.o')) return 'won';
+      if (s.includes('lost')) return 'lost';
+      return 'none';
+    }
+    
+    function renderPlants(filter = 'all') {
+      const list = document.getElementById('plant-list');
+      let filtered = plants;
+      
+      if (filter !== 'all') {
+        filtered = plants.filter(p => getStageClass(p.stage) === filter);
+      }
+      
+      if (filtered.length === 0) {
+        list.innerHTML = '<p style="color: #666; text-align: center; padding: 2rem;">No plants match filter</p>';
+        return;
+      }
+      
+      list.innerHTML = filtered.map(p => `
+        <div class="plant-card" onclick="selectPlant('${p.id}')" id="card-${p.id}">
+          <div class="plant-name">${p.name}</div>
+          <div class="plant-location">${p.city}, ${p.state}</div>
+          <span class="plant-stage stage-${getStageClass(p.stage)}">${p.stage}</span>
+        </div>
+      `).join('');
+    }
+    
+    function updateStats() {
+      const counts = { lead: 0, qualified: 0, demo: 0, won: 0 };
+      plants.forEach(p => {
+        const c = getStageClass(p.stage);
+        if (c === 'lead') counts.lead++;
+        else if (c === 'qualified') counts.qualified++;
+        else if (c === 'demo') counts.demo++;
+        else if (c === 'won') counts.won++;
+      });
+      document.getElementById('stat-lead').textContent = counts.lead;
+      document.getElementById('stat-qualified').textContent = counts.qualified;
+      document.getElementById('stat-demo').textContent = counts.demo;
+      document.getElementById('stat-won').textContent = counts.won;
+    }
+    
+    function addMarkers() {
+      plants.forEach(p => {
+        if (!p.lat || !p.lon) return;
+        
+        const stageClass = getStageClass(p.stage);
+        const icon = L.divIcon({
+          className: 'custom-marker marker-' + stageClass,
+          iconSize: [24, 24],
+          iconAnchor: [12, 12]
+        });
+        
+        const marker = L.marker([p.lat, p.lon], { icon })
+          .addTo(map)
+          .on('click', () => selectPlant(p.id));
+        
+        markers[p.id] = marker;
+      });
+    }
+    
+    function selectPlant(id) {
+      const plant = plants.find(p => p.id === id);
+      if (!plant) return;
+      
+      selectedPlant = plant;
+      
+      // Update cards
+      document.querySelectorAll('.plant-card').forEach(c => c.classList.remove('selected'));
+      const card = document.getElementById('card-' + id);
+      if (card) card.classList.add('selected');
+      
+      // Pan map
+      if (plant.lat && plant.lon) {
+        map.panTo([plant.lat, plant.lon]);
+      }
+      
+      // Show detail panel
+      document.getElementById('detail-title').textContent = plant.name;
+      document.getElementById('detail-address').textContent = 
+        plant.address || `${plant.city}, ${plant.state} ${plant.zip}`;
+      document.getElementById('detail-permit').textContent = plant.permit || '-';
+      document.getElementById('detail-permit-status').textContent = plant.permit_status || '';
+      document.getElementById('detail-contact').textContent = plant.contact_name || 'No contact';
+      document.getElementById('detail-email').textContent = plant.contact_email || '';
+      document.getElementById('detail-phone').textContent = plant.contact_phone || '-';
+      
+      document.getElementById('copy-email-btn').style.display = plant.contact_email ? 'inline-block' : 'none';
+      document.getElementById('copy-phone-btn').style.display = plant.contact_phone ? 'inline-block' : 'none';
+      
+      document.getElementById('detail-panel').classList.add('open');
+    }
+    
+    function closeDetail() {
+      document.getElementById('detail-panel').classList.remove('open');
+      selectedPlant = null;
+    }
+    
+    function copyEmail() {
+      if (selectedPlant?.contact_email) {
+        navigator.clipboard.writeText(selectedPlant.contact_email);
+        const btn = document.getElementById('copy-email-btn');
+        btn.textContent = '✓ Copied!';
+        btn.classList.add('copied');
+        setTimeout(() => {
+          btn.textContent = '📋 Copy Email';
+          btn.classList.remove('copied');
+        }, 2000);
+      }
+    }
+    
+    function copyPhone() {
+      if (selectedPlant?.contact_phone) {
+        navigator.clipboard.writeText(selectedPlant.contact_phone);
+        const btn = document.getElementById('copy-phone-btn');
+        btn.textContent = '✓ Copied!';
+        btn.classList.add('copied');
+        setTimeout(() => {
+          btn.textContent = '📋 Copy Phone';
+          btn.classList.remove('copied');
+        }, 2000);
+      }
+    }
+    
+    // Filter buttons
+    document.querySelectorAll('.filter-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        renderPlants(btn.dataset.filter);
+      });
+    });
+  </script>
+</body>
+</html>
